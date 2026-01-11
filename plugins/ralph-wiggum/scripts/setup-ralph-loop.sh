@@ -137,6 +137,11 @@ else
   COMPLETION_PROMISE_YAML="null"
 fi
 
+# Note: session_transcript starts as null - the stop hook will claim it
+# by writing the transcript path on first invocation. This provides
+# cross-session isolation: if another session in the same directory
+# stops, it won't affect this loop because the transcript paths differ.
+
 cat > .claude/ralph-loop.local.md <<EOF
 ---
 active: true
@@ -144,6 +149,7 @@ iteration: 1
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
 started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+session_transcript: null
 ---
 
 $PROMPT

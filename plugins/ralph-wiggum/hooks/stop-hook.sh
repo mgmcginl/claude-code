@@ -17,12 +17,35 @@ if [[ ! -f "$RALPH_STATE_FILE" ]]; then
   exit 0
 fi
 
+# Get transcript path from hook input FIRST (needed for session validation)
+TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
+
 # Parse markdown frontmatter (YAML between ---) and extract values
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
 MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//')
 # Extract completion_promise and strip surrounding quotes if present
 COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
+# Extract session_token for cross-session isolation
+SESSION_TOKEN=$(echo "$FRONTMATTER" | grep '^session_token:' | sed 's/session_token: *//' | sed 's/^"\(.*\)"$/\1/')
+
+# SESSION ISOLATION CHECK
+# This prevents the Ralph loop from affecting other Claude sessions
+# that happen to be running in the same working directory
+#
+# The session_token is output during /ralph-loop setup and gets recorded in the transcript.
+# We verify this session owns the Ralph loop by checking if the token appears in OUR transcript.
+if [[ -n "$SESSION_TOKEN" ]] && [[ "$SESSION_TOKEN" != "null" ]]; then
+  # Check if this session's transcript contains the session token
+  # The token format is "Session token: ralph-TIMESTAMP-PID-RANDOM"
+  if ! grep -q "Session token: $SESSION_TOKEN" "$TRANSCRIPT_PATH" 2>/dev/null; then
+    # This transcript doesn't contain the token - this is a DIFFERENT session
+    # Allow this session to exit normally without affecting the Ralph loop
+    exit 0
+  fi
+  # Token found in transcript - this IS our session, proceed with the loop
+fi
+# If no session_token (legacy state file), proceed with loop (backward compatibility)
 
 # Validate numeric fields before arithmetic operations
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
@@ -54,9 +77,7 @@ if [[ $MAX_ITERATIONS -gt 0 ]] && [[ $ITERATION -ge $MAX_ITERATIONS ]]; then
   exit 0
 fi
 
-# Get transcript path from hook input
-TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
-
+# Validate transcript file exists (TRANSCRIPT_PATH already extracted above)
 if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
   echo "⚠️  Ralph loop: Transcript file not found" >&2
   echo "   Expected: $TRANSCRIPT_PATH" >&2
