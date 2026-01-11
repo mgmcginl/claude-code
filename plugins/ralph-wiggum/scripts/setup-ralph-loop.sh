@@ -130,17 +130,17 @@ fi
 # Create state file for stop hook (markdown with YAML frontmatter)
 mkdir -p .claude
 
+# Generate unique session token for cross-session isolation
+# This token is stored in the state file AND output to the transcript
+# The stop hook verifies the token exists in the transcript before proceeding
+SESSION_TOKEN="ralph-$(date +%s)-$$-$(head -c 8 /dev/urandom | xxd -p 2>/dev/null || echo $RANDOM$RANDOM)"
+
 # Quote completion promise for YAML if it contains special chars or is not null
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
   COMPLETION_PROMISE_YAML="\"$COMPLETION_PROMISE\""
 else
   COMPLETION_PROMISE_YAML="null"
 fi
-
-# Note: session_transcript starts as null - the stop hook will claim it
-# by writing the transcript path on first invocation. This provides
-# cross-session isolation: if another session in the same directory
-# stops, it won't affect this loop because the transcript paths differ.
 
 cat > .claude/ralph-loop.local.md <<EOF
 ---
@@ -149,16 +149,17 @@ iteration: 1
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
 started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-session_transcript: null
+session_token: "$SESSION_TOKEN"
 ---
 
 $PROMPT
 EOF
 
-# Output setup message
+# Output setup message (session token MUST be printed for the stop hook to verify ownership)
 cat <<EOF
 🔄 Ralph loop activated in this session!
 
+Session token: $SESSION_TOKEN
 Iteration: 1
 Max iterations: $(if [[ $MAX_ITERATIONS -gt 0 ]]; then echo $MAX_ITERATIONS; else echo "unlimited"; fi)
 Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE//\"/} (ONLY output when TRUE - do not lie!)"; else echo "none (runs forever)"; fi)

@@ -35,17 +35,25 @@ SESSION_TOKEN=$(echo "$FRONTMATTER" | grep '^session_token:' | sed 's/session_to
 #
 # The session_token is output during /ralph-loop setup and gets recorded in the transcript.
 # We verify this session owns the Ralph loop by checking if the token appears in OUR transcript.
-if [[ -n "$SESSION_TOKEN" ]] && [[ "$SESSION_TOKEN" != "null" ]]; then
-  # Check if this session's transcript contains the session token
-  # The token format is "Session token: ralph-TIMESTAMP-PID-RANDOM"
-  if ! grep -q "Session token: $SESSION_TOKEN" "$TRANSCRIPT_PATH" 2>/dev/null; then
-    # This transcript doesn't contain the token - this is a DIFFERENT session
-    # Allow this session to exit normally without affecting the Ralph loop
-    exit 0
-  fi
-  # Token found in transcript - this IS our session, proceed with the loop
+if [[ -z "$SESSION_TOKEN" ]] || [[ "$SESSION_TOKEN" == "null" ]]; then
+  # LEGACY STATE FILE without session_token - cannot verify ownership
+  # Exit without affecting the loop to avoid cross-session interference
+  # The original session's hook will also fail to verify, so we just stop the loop
+  echo "⚠️  Ralph loop: Legacy state file without session token" >&2
+  echo "   This state file was created before session isolation was added." >&2
+  echo "   Removing to prevent cross-session issues. Please restart your Ralph loop." >&2
+  rm "$RALPH_STATE_FILE"
+  exit 0
 fi
-# If no session_token (legacy state file), proceed with loop (backward compatibility)
+
+# Check if this session's transcript contains the session token
+# The token format is "Session token: ralph-TIMESTAMP-PID-RANDOM"
+if ! grep -q "Session token: $SESSION_TOKEN" "$TRANSCRIPT_PATH" 2>/dev/null; then
+  # This transcript doesn't contain the token - this is a DIFFERENT session
+  # Allow this session to exit normally without affecting the Ralph loop
+  exit 0
+fi
+# Token found in transcript - this IS our session, proceed with the loop
 
 # Validate numeric fields before arithmetic operations
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
